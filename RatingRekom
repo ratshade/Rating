@@ -1,0 +1,1071 @@
+@@ -0,0 +1,1070 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "5b57c216",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import seaborn as sns\n",
+    "import re\n",
+    "import surprise\n",
+    "from surprise import Dataset\n",
+    "from surprise import Reader\n",
+    "from scipy.sparse import csr_matrix\n",
+    "from sklearn.neighbors import NearestNeighbors\n",
+    "from sklearn.metrics.pairwise import sigmoid_kernel\n",
+    "from sklearn.feature_extraction.text import TfidfVectorizer"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "0ce879df",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "anime_data = pd.read_csv('data/anime.csv')\n",
+    "rates_data = pd.read_csv('data/rating.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "id": "80e49ae4",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "name\n",
+       "Kimi no Na wa.                      0\n",
+       "Fullmetal Alchemist: Brotherhood    1\n",
+       "Gintama°                            2\n",
+       "Steins;Gate                         3\n",
+       "Gintama&#039;                       4\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 36,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "anime_index = pd.Series(anime_data.index, index=anime_data.name)\n",
+    "anime_index.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "cc6dee4b",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Data tabel anime berupa (row, column):(12294, 7)\n",
+      "<class 'pandas.core.frame.DataFrame'>\n",
+      "RangeIndex: 12294 entries, 0 to 12293\n",
+      "Data columns (total 7 columns):\n",
+      " #   Column    Non-Null Count  Dtype  \n",
+      "---  ------    --------------  -----  \n",
+      " 0   anime_id  12294 non-null  int64  \n",
+      " 1   name      12294 non-null  object \n",
+      " 2   genre     12232 non-null  object \n",
+      " 3   type      12269 non-null  object \n",
+      " 4   episodes  12294 non-null  object \n",
+      " 5   rating    12064 non-null  float64\n",
+      " 6   members   12294 non-null  int64  \n",
+      "dtypes: float64(1), int64(2), object(4)\n",
+      "memory usage: 672.5+ KB\n",
+      "None\n"
+     ]
+    }
+   ],
+   "source": [
+    "print (\"Data tabel anime berupa (row, column):\"+ str(anime_data.shape))\n",
+    "print (anime_data.info())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "95e974b5",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Data tabel rate berupa (row, column):(7813737, 3)\n",
+      "<class 'pandas.core.frame.DataFrame'>\n",
+      "RangeIndex: 7813737 entries, 0 to 7813736\n",
+      "Data columns (total 3 columns):\n",
+      " #   Column    Dtype\n",
+      "---  ------    -----\n",
+      " 0   user_id   int64\n",
+      " 1   anime_id  int64\n",
+      " 2   rating    int64\n",
+      "dtypes: int64(3)\n",
+      "memory usage: 178.8 MB\n",
+      "None\n"
+     ]
+    }
+   ],
+   "source": [
+    "print (\"Data tabel rate berupa (row, column):\"+ str(rates_data.shape))\n",
+    "print (rates_data.info())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "77b7e405",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>anime_id</th>\n",
+       "      <th>anime_title</th>\n",
+       "      <th>genre</th>\n",
+       "      <th>type</th>\n",
+       "      <th>episodes</th>\n",
+       "      <th>rating</th>\n",
+       "      <th>members</th>\n",
+       "      <th>user_id</th>\n",
+       "      <th>user_rating</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>32281</td>\n",
+       "      <td>Kimi no Na wa.</td>\n",
+       "      <td>Drama, Romance, School, Supernatural</td>\n",
+       "      <td>Movie</td>\n",
+       "      <td>1</td>\n",
+       "      <td>9.37</td>\n",
+       "      <td>200630</td>\n",
+       "      <td>99</td>\n",
+       "      <td>5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>32281</td>\n",
+       "      <td>Kimi no Na wa.</td>\n",
+       "      <td>Drama, Romance, School, Supernatural</td>\n",
+       "      <td>Movie</td>\n",
+       "      <td>1</td>\n",
+       "      <td>9.37</td>\n",
+       "      <td>200630</td>\n",
+       "      <td>152</td>\n",
+       "      <td>10</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>32281</td>\n",
+       "      <td>Kimi no Na wa.</td>\n",
+       "      <td>Drama, Romance, School, Supernatural</td>\n",
+       "      <td>Movie</td>\n",
+       "      <td>1</td>\n",
+       "      <td>9.37</td>\n",
+       "      <td>200630</td>\n",
+       "      <td>244</td>\n",
+       "      <td>10</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>32281</td>\n",
+       "      <td>Kimi no Na wa.</td>\n",
+       "      <td>Drama, Romance, School, Supernatural</td>\n",
+       "      <td>Movie</td>\n",
+       "      <td>1</td>\n",
+       "      <td>9.37</td>\n",
+       "      <td>200630</td>\n",
+       "      <td>271</td>\n",
+       "      <td>10</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>32281</td>\n",
+       "      <td>Kimi no Na wa.</td>\n",
+       "      <td>Drama, Romance, School, Supernatural</td>\n",
+       "      <td>Movie</td>\n",
+       "      <td>1</td>\n",
+       "      <td>9.37</td>\n",
+       "      <td>200630</td>\n",
+       "      <td>278</td>\n",
+       "      <td>-1</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   anime_id     anime_title                                 genre   type  \\\n",
+       "0     32281  Kimi no Na wa.  Drama, Romance, School, Supernatural  Movie   \n",
+       "1     32281  Kimi no Na wa.  Drama, Romance, School, Supernatural  Movie   \n",
+       "2     32281  Kimi no Na wa.  Drama, Romance, School, Supernatural  Movie   \n",
+       "3     32281  Kimi no Na wa.  Drama, Romance, School, Supernatural  Movie   \n",
+       "4     32281  Kimi no Na wa.  Drama, Romance, School, Supernatural  Movie   \n",
+       "\n",
+       "  episodes  rating  members  user_id  user_rating  \n",
+       "0        1    9.37   200630       99            5  \n",
+       "1        1    9.37   200630      152           10  \n",
+       "2        1    9.37   200630      244           10  \n",
+       "3        1    9.37   200630      271           10  \n",
+       "4        1    9.37   200630      278           -1  "
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#Merge data anime - setting user_id dan user_rate\n",
+    "anim_fulldata = pd.merge(anime_data, rates_data, on='anime_id',suffixes= ['', '_user'])\n",
+    "anim_fulldata = anim_fulldata.rename(columns={'name': 'anime_title', 'rating_user': 'user_rating'})\n",
+    "anim_fulldata.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "69276b5e",
+   "metadata": {},
+   "source": [
+    "# Membuat Diagram TOP 10 Anime Popular"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "57168d5a",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "Text(0, 0.5, 'User Rating count')"
+      ]
+     },
+     "execution_count": 8,
+     "metadata": {},
+     "output_type": "execute_result"
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "gabung_anime_rates = anim_fulldata.dropna(axis = 0, subset = ['anime_title'])\n",
+    "anim_rateCount = (gabung_anime_rates.\n",
+    "                     groupby(by = ['anime_title'])['user_rating'].\n",
+    "                     count().\n",
+    "                     reset_index().rename(columns = {'rating': 'totalRatingCount'})\n",
+    "                     [['anime_title', 'user_rating']]\n",
+    "                     )\n",
+    "\n",
+    "top_animerate = anim_rateCount[['anime_title', 'user_rating']].sort_values(\n",
+    "    by = 'user_rating',ascending = False\n",
+    ").head(10)\n",
+    "\n",
+    "ax = sns.barplot(x = \"anime_title\", y = \"user_rating\", data = top_animerate, palette=\"Dark2\")\n",
+    "ax.set_xticklabels(ax.get_xticklabels(), fontsize=11, rotation=40, ha=\"right\")\n",
+    "ax.set_title('Top 10 Anime dengan rating terbanyak',fontsize = 22)\n",
+    "ax.set_xlabel('Anime',fontsize = 20) \n",
+    "ax.set_ylabel('User Rating count', fontsize = 20)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "08fa7ae9",
+   "metadata": {},
+   "source": [
+    "# Cek data Anime"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 31,
+   "id": "a5d486d9",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "anime_id      0\n",
+       "name          0\n",
+       "genre         0\n",
+       "type         25\n",
+       "episodes      0\n",
+       "rating      230\n",
+       "members       0\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 31,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "anime_data.isnull().sum()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "id": "fe3ee722",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "user_id     0\n",
+       "anime_id    0\n",
+       "rating      0\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 33,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "rates_data.isnull().sum()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "74485eef",
+   "metadata": {},
+   "source": [
+    "# Merge data user_id dengan anime_id"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 35,
+   "id": "be0dd9fa",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>user_id</th>\n",
+       "      <th>anime_id</th>\n",
+       "      <th>rating</th>\n",
+       "      <th>user_anime_count</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>7813732</th>\n",
+       "      <td>73515</td>\n",
+       "      <td>16512</td>\n",
+       "      <td>7</td>\n",
+       "      <td>3504</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7813733</th>\n",
+       "      <td>73515</td>\n",
+       "      <td>17187</td>\n",
+       "      <td>9</td>\n",
+       "      <td>1154</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7813734</th>\n",
+       "      <td>73515</td>\n",
+       "      <td>22145</td>\n",
+       "      <td>10</td>\n",
+       "      <td>3544</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7813735</th>\n",
+       "      <td>73516</td>\n",
+       "      <td>790</td>\n",
+       "      <td>9</td>\n",
+       "      <td>7736</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7813736</th>\n",
+       "      <td>73516</td>\n",
+       "      <td>8074</td>\n",
+       "      <td>9</td>\n",
+       "      <td>23065</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "         user_id  anime_id  rating  user_anime_count\n",
+       "7813732    73515     16512       7              3504\n",
+       "7813733    73515     17187       9              1154\n",
+       "7813734    73515     22145      10              3544\n",
+       "7813735    73516       790       9              7736\n",
+       "7813736    73516      8074       9             23065"
+      ]
+     },
+     "execution_count": 35,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "rates_data['user_anime_count'] = rates_data.groupby('anime_id')['anime_id'].transform(np.count_nonzero)\n",
+    "rates_data.tail() "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "da2602a1",
+   "metadata": {},
+   "source": [
+    "# Handle NaN data value "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "1be26d89",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "anime_id       0\n",
+       "anime_title    0\n",
+       "genre          0\n",
+       "type           0\n",
+       "episodes       0\n",
+       "rating         0\n",
+       "members        0\n",
+       "user_id        0\n",
+       "user_rating    0\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 9,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "anim_feature = anim_fulldata.copy()\n",
+    "anim_feature[\"user_rating\"].replace({-1: np.nan}, inplace=True)\n",
+    "anim_feature.head()\n",
+    "\n",
+    "anim_feature = anim_feature.dropna(axis = 0, how ='any') \n",
+    "anim_feature.isnull().sum()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "44e12748",
+   "metadata": {},
+   "source": [
+    "# Tabel Pivot"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "id": "30865d61",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th>user_id</th>\n",
+       "      <th>5</th>\n",
+       "      <th>7</th>\n",
+       "      <th>17</th>\n",
+       "      <th>38</th>\n",
+       "      <th>43</th>\n",
+       "      <th>46</th>\n",
+       "      <th>123</th>\n",
+       "      <th>129</th>\n",
+       "      <th>139</th>\n",
+       "      <th>160</th>\n",
+       "      <th>...</th>\n",
+       "      <th>73406</th>\n",
+       "      <th>73417</th>\n",
+       "      <th>73422</th>\n",
+       "      <th>73457</th>\n",
+       "      <th>73460</th>\n",
+       "      <th>73476</th>\n",
+       "      <th>73499</th>\n",
+       "      <th>73502</th>\n",
+       "      <th>73503</th>\n",
+       "      <th>73507</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>anime_title</th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>&amp;quot;0&amp;quot;</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>&amp;quot;Bungaku Shoujo&amp;quot; Kyou no Oyatsu: Hatsukoi</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>7.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>10.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>&amp;quot;Bungaku Shoujo&amp;quot; Memoire</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>8.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>&amp;quot;Bungaku Shoujo&amp;quot; Movie</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>8.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>10.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>&amp;quot;Eiji&amp;quot;</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "<p>5 rows × 8713 columns</p>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "user_id                                             5      7      17     \\\n",
+       "anime_title                                                               \n",
+       "&quot;0&quot;                                         0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Kyou no Oyatsu: Hats...    0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Memoire                    0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Movie                      0.0    0.0    0.0   \n",
+       "&quot;Eiji&quot;                                      0.0    0.0    0.0   \n",
+       "\n",
+       "user_id                                             38     43     46     \\\n",
+       "anime_title                                                               \n",
+       "&quot;0&quot;                                         0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Kyou no Oyatsu: Hats...    0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Memoire                    0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Movie                      0.0    0.0    0.0   \n",
+       "&quot;Eiji&quot;                                      0.0    0.0    0.0   \n",
+       "\n",
+       "user_id                                             123    129    139    \\\n",
+       "anime_title                                                               \n",
+       "&quot;0&quot;                                         0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Kyou no Oyatsu: Hats...    0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Memoire                    0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Movie                      0.0    0.0    0.0   \n",
+       "&quot;Eiji&quot;                                      0.0    0.0    0.0   \n",
+       "\n",
+       "user_id                                             160    ...  73406  73417  \\\n",
+       "anime_title                                                ...                 \n",
+       "&quot;0&quot;                                         0.0  ...    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Kyou no Oyatsu: Hats...    7.0  ...    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Memoire                    8.0  ...    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Movie                      8.0  ...    0.0    0.0   \n",
+       "&quot;Eiji&quot;                                      0.0  ...    0.0    0.0   \n",
+       "\n",
+       "user_id                                             73422  73457  73460  \\\n",
+       "anime_title                                                               \n",
+       "&quot;0&quot;                                         0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Kyou no Oyatsu: Hats...    0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Memoire                    0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Movie                      0.0    0.0    0.0   \n",
+       "&quot;Eiji&quot;                                      0.0    0.0    0.0   \n",
+       "\n",
+       "user_id                                             73476  73499  73502  \\\n",
+       "anime_title                                                               \n",
+       "&quot;0&quot;                                         0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Kyou no Oyatsu: Hats...    0.0    0.0   10.0   \n",
+       "&quot;Bungaku Shoujo&quot; Memoire                    0.0    0.0    0.0   \n",
+       "&quot;Bungaku Shoujo&quot; Movie                      0.0    0.0   10.0   \n",
+       "&quot;Eiji&quot;                                      0.0    0.0    0.0   \n",
+       "\n",
+       "user_id                                             73503  73507  \n",
+       "anime_title                                                       \n",
+       "&quot;0&quot;                                         0.0    0.0  \n",
+       "&quot;Bungaku Shoujo&quot; Kyou no Oyatsu: Hats...    0.0    0.0  \n",
+       "&quot;Bungaku Shoujo&quot; Memoire                    0.0    0.0  \n",
+       "&quot;Bungaku Shoujo&quot; Movie                      0.0    0.0  \n",
+       "&quot;Eiji&quot;                                      0.0    0.0  \n",
+       "\n",
+       "[5 rows x 8713 columns]"
+      ]
+     },
+     "execution_count": 18,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "anim_pivot = anim_feature.pivot_table(index='anime_title',\n",
+    "                                      columns='user_id',\n",
+    "                                      values='user_rating'\n",
+    "                                     ).fillna(0)\n",
+    "anim_pivot.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "ea6aca91",
+   "metadata": {},
+   "source": [
+    "# Cosine similarity dengan KNN"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "3d29809c",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "NearestNeighbors(algorithm='brute', metric='cosine')"
+      ]
+     },
+     "execution_count": 12,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "anime_matrix = csr_matrix(anim_pivot.values)\n",
+    "model_knn = NearestNeighbors(metric = 'cosine', algorithm = 'brute')\n",
+    "model_knn.fit(anime_matrix)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "0fe3242f",
+   "metadata": {},
+   "source": [
+    "# Tes Collaboration Filtering"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "40aef142",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Rekomendasi Birthday Boy:\n",
+      "\n",
+      "1: Oni, dengan index 0.5642597277564182:\n",
+      "2: Mizutori, dengan index 0.5870482278603227:\n",
+      "3: Kudan, dengan index 0.5910234003114077:\n",
+      "4: Fuyu no Hi, dengan index 0.5936265616387397:\n",
+      "5: Kumo ga Haretara, dengan index 0.5999294096017596:\n"
+     ]
+    }
+   ],
+   "source": [
+    "for i in range(0, len(distances.flatten())):\n",
+    "    if i == 0:\n",
+    "        print('Rekomendasi {0}:\\n'.format(anim_pivot.index[query_index]))\n",
+    "    else:\n",
+    "        print('{0}: {1}, dengan index {2}:'.format(i, \n",
+    "                                                       anim_pivot.index[indices.flatten()[i]], \n",
+    "                                                       distances.flatten()[i]\n",
+    "                                                      ))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "id": "599a54c3",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "TfV = TfidfVectorizer(min_df=3,  max_features=None, \n",
+    "                      strip_accents = 'unicode', \n",
+    "                      analyzer='word',\n",
+    "                      token_pattern=r'\\w{1,}',\n",
+    "                      ngram_range = (1, 3),\n",
+    "                      stop_words = 'english')\n",
+    "anime_data['genre'] = anime_data['genre'].fillna('')\n",
+    "genres_str = anime_data['genre'].str.split(',').astype(str)\n",
+    "tfv_matrix = TfV.fit_transform(genres_str)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 39,
+   "id": "a6263dc8",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sig = sigmoid_kernel(tfv_matrix, tfv_matrix)\n",
+    "indices = pd.Series(anime_data.index, index=anime_data['name']).drop_duplicates()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "829af181",
+   "metadata": {},
+   "source": [
+    "# Rekomendasi Function"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "id": "414379c2",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def minta_rec(title, sig=sig):\n",
+    "    # ambil index title anime\n",
+    "    idx = indices[title]\n",
+    "\n",
+    "    # mengambil score\n",
+    "    sig_scores = list(enumerate(sig[idx]))\n",
+    "\n",
+    "    # urutin movie dgn score \n",
+    "    sig_scores = sorted(sig_scores, key=lambda x: x[1], reverse=True)\n",
+    "    sig_scores = sig_scores[1:11]\n",
+    "\n",
+    "    # Movie indices\n",
+    "    anime_indices = [i[0] for i in sig_scores]\n",
+    "\n",
+    "    # Top 10 anime movie\n",
+    "    return pd.DataFrame({'Nama Anime': anime_data['name'].iloc[anime_indices].values,\n",
+    "                         'Rating': anime_data['rating'].iloc[anime_indices].values\n",
+    "                        })"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 38,
+   "id": "6c8798b8",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Nama Anime</th>\n",
+       "      <th>Rating</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>Non Non Biyori</td>\n",
+       "      <td>8.05</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>Non Non Biyori Repeat OVA</td>\n",
+       "      <td>7.86</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>Non Non Biyori: Okinawa e Ikukoto ni Natta</td>\n",
+       "      <td>7.65</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>Himouto! Umaru-chan</td>\n",
+       "      <td>7.55</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>Yuyushiki</td>\n",
+       "      <td>7.45</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>5</th>\n",
+       "      <td>Himouto! Umaru-chan: Umaru-chan Mou Ikkai!</td>\n",
+       "      <td>7.43</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>6</th>\n",
+       "      <td>Hanayamata</td>\n",
+       "      <td>7.42</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7</th>\n",
+       "      <td>GA: Geijutsuka Art Design Class</td>\n",
+       "      <td>7.23</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>8</th>\n",
+       "      <td>A-Channel+smile</td>\n",
+       "      <td>7.22</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>9</th>\n",
+       "      <td>GA: Geijutsuka Art Design Class OVA</td>\n",
+       "      <td>7.19</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "                                   Nama Anime  Rating\n",
+       "0                              Non Non Biyori    8.05\n",
+       "1                   Non Non Biyori Repeat OVA    7.86\n",
+       "2  Non Non Biyori: Okinawa e Ikukoto ni Natta    7.65\n",
+       "3                         Himouto! Umaru-chan    7.55\n",
+       "4                                   Yuyushiki    7.45\n",
+       "5  Himouto! Umaru-chan: Umaru-chan Mou Ikkai!    7.43\n",
+       "6                                  Hanayamata    7.42\n",
+       "7             GA: Geijutsuka Art Design Class    7.23\n",
+       "8                             A-Channel+smile    7.22\n",
+       "9         GA: Geijutsuka Art Design Class OVA    7.19"
+      ]
+     },
+     "execution_count": 38,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Ubah sesuai judul anime yang ingin dicari\n",
+    "minta_rec('Non Non Biyori')"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.9.7"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
